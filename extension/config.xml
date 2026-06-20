@@ -2,8 +2,11 @@
 <extension>
   <information>
     <name>Kindle Settlers</name>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
     <author>Nick Garske</author>
     <id>kindlesettlers</id>
   </information>
+  <menus>
+    <menu type="json" dynamic="true">menu.json</menu>
+  </menus>
 </extension>
