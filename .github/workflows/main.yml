@@ -69,7 +69,7 @@ jobs:
         run: meson compile -C build
 
       - name: Package KUAL extension
-        run: ./scripts/package.sh build
+        run: bash ./scripts/package.sh build
 
       - name: Upload KUAL extension artifact
         uses: actions/upload-artifact@v4
