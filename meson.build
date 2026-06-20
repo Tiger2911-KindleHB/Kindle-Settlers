@@ -7,4 +7,5 @@ gtk_dep = dependency('gtk+-2.0')
 executable('kindlesettlers',
   ['src/main.cpp'],
   dependencies: [gtk_dep],
+  link_args: ['-static-libstdc++', '-static-libgcc'],
   install: false)

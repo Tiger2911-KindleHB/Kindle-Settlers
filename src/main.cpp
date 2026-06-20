@@ -43,6 +43,14 @@ static std::string extension_root() {
 
 static std::string save_path() { return extension_root() + "/data/save.json"; }
 static std::string settings_path() { return extension_root() + "/data/settings.json"; }
+static std::string app_log_path() { return extension_root() + "/data/kindlesettlers.log"; }
+
+static void append_app_log(const std::string& line) {
+    ensure_dir(extension_root() + "/data");
+    std::ofstream f(app_log_path(), std::ios::app);
+    if (f) f << line << "\n";
+}
+
 static std::string json_escape(const std::string& s) {
     std::string out;
     for (char c : s) {
@@ -1330,8 +1338,32 @@ static gboolean on_delete(GtkWidget*, GdkEvent*, gpointer) {
     return TRUE;
 }
 
+static gboolean force_window_visible(gpointer data) {
+    App* app = static_cast<App*>(data);
+    if (!app || !app->window) return FALSE;
+    gtk_window_set_decorated(GTK_WINDOW(app->window), FALSE);
+    gtk_window_set_keep_above(GTK_WINDOW(app->window), TRUE);
+    gtk_window_fullscreen(GTK_WINDOW(app->window));
+    gtk_window_present(GTK_WINDOW(app->window));
+    if (app->window->window) {
+        gdk_window_fullscreen(app->window->window);
+        gdk_window_raise(app->window->window);
+    }
+    if (app->area) gtk_widget_queue_draw(app->area);
+    append_app_log("window-present requested");
+    return FALSE;
+}
+
+static void on_realize(GtkWidget*, gpointer data) {
+    force_window_visible(data);
+}
+
 int main(int argc, char** argv) {
-    gtk_init(&argc, &argv);
+    append_app_log("process start");
+    if (!gtk_init_check(&argc, &argv)) {
+        append_app_log("gtk_init_check failed: unable to open Kindle X display");
+        return 2;
+    }
     App app;
     g_app = &app;
     app.load_settings();
@@ -1340,6 +1372,9 @@ int main(int argc, char** argv) {
     app.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(app.window), "Kindle Settlers");
     gtk_window_set_default_size(GTK_WINDOW(app.window), 758, 1024);
+    gtk_window_set_decorated(GTK_WINDOW(app.window), FALSE);
+    gtk_window_set_keep_above(GTK_WINDOW(app.window), TRUE);
+    gtk_window_set_position(GTK_WINDOW(app.window), GTK_WIN_POS_CENTER);
     gtk_window_fullscreen(GTK_WINDOW(app.window));
 
     app.area = gtk_drawing_area_new();
@@ -1349,8 +1384,16 @@ int main(int argc, char** argv) {
     g_signal_connect(G_OBJECT(app.area), "expose-event", G_CALLBACK(on_expose), nullptr);
     g_signal_connect(G_OBJECT(app.area), "button-press-event", G_CALLBACK(on_button), nullptr);
     g_signal_connect(G_OBJECT(app.window), "delete-event", G_CALLBACK(on_delete), nullptr);
+    g_signal_connect(G_OBJECT(app.window), "realize", G_CALLBACK(on_realize), &app);
 
     gtk_widget_show_all(app.window);
+    gtk_widget_grab_focus(app.area);
+    force_window_visible(&app);
+    g_idle_add(force_window_visible, &app);
+    g_timeout_add(250, force_window_visible, &app);
+    g_timeout_add(1500, force_window_visible, &app);
+    append_app_log("gtk main entering");
     gtk_main();
+    append_app_log("gtk main exited");
     return 0;
 }
