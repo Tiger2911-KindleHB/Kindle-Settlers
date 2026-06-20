@@ -1,0 +1,71 @@
+name: Build Kindle Settlers kindlehf
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ca-certificates \
+            git \
+            meson \
+            ninja-build \
+            pkg-config \
+            python3 \
+            wget \
+            xz-utils \
+            zip
+
+      - name: Install kindlehf koxtoolchain
+        run: |
+          set -euo pipefail
+          wget -O /tmp/kindlehf.tar.gz https://github.com/koreader/koxtoolchain/releases/download/2025.05/kindlehf.tar.gz
+          tar -xzf /tmp/kindlehf.tar.gz -C "$HOME"
+          echo "$HOME/x-tools/arm-kindlehf-linux-gnueabihf/bin" >> "$GITHUB_PATH"
+
+      - name: Install Kindle SDK
+        run: |
+          set -euo pipefail
+          git clone --recursive --depth=1 https://github.com/KindleModding/kindle-sdk.git /tmp/kindle-sdk
+          cd /tmp/kindle-sdk
+          chmod +x ./gen-sdk.sh
+          ./gen-sdk.sh kindlehf "$HOME/x-tools/arm-kindlehf-linux-gnueabihf"
+
+      - name: Locate Meson cross file
+        id: cross
+        run: |
+          set -euo pipefail
+          CROSS_FILE="$(find "$HOME" /tmp/kindle-sdk -name 'meson-crosscompile.txt' -print -quit || true)"
+          if [ -z "$CROSS_FILE" ]; then
+            CROSS_FILE="$GITHUB_WORKSPACE/cross/kindlehf-fallback.ini"
+          fi
+          echo "file=$CROSS_FILE" >> "$GITHUB_OUTPUT"
+          echo "Using cross file: $CROSS_FILE"
+
+      - name: Configure Meson
+        run: meson setup build --cross-file "${{ steps.cross.outputs.file }}" --buildtype=release
+
+      - name: Compile
+        run: meson compile -C build
+
+      - name: Package KUAL extension
+        run: ./scripts/package.sh build
+
+      - name: Upload KUAL extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kindlesettlers-kual
+          path: dist/kindlesettlers-kual.zip
+          if-no-files-found: error
