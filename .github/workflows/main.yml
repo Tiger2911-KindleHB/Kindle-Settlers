@@ -17,15 +17,23 @@ jobs:
       - name: Install host packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
             ca-certificates \
             git \
+            libarchive-dev \
+            libbz2-dev \
+            libgmp-dev \
+            liblzma-dev \
+            libssl-dev \
             meson \
+            nettle-dev \
             ninja-build \
             pkg-config \
             python3 \
             wget \
             xz-utils \
+            zlib1g-dev \
             zip
 
       - name: Install kindlehf koxtoolchain
