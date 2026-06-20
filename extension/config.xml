@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension>
+  <information>
+    <name>Kindle Settlers</name>
+    <version>0.1.0</version>
+    <author>Nick Garske</author>
+    <id>kindlesettlers</id>
+  </information>
+</extension>
