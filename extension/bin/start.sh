@@ -18,6 +18,13 @@ LOG="$EXT_DIR/data/kindlesettlers.log"
 export DISPLAY="${DISPLAY:-:0.0}"
 export HOME="${HOME:-/mnt/us}"
 export LD_LIBRARY_PATH="$EXT_DIR/lib:${LD_LIBRARY_PATH:-}"
+export GTK2_RC_FILES="/dev/null"
+
+# Clear stale Kindle Home pixels before the GTK popup draws its first frame.
+# This avoids the partial-refresh ghosting/overlay failure seen on-device.
+if command -v eips >/dev/null 2>&1; then
+  eips -c >/dev/null 2>&1 || true
+fi
 
 if [ ! -x "$EXT_DIR/bin/kindlesettlers" ]; then
   echo "ERROR: binary is missing or not executable: $EXT_DIR/bin/kindlesettlers" >> "$LOG"

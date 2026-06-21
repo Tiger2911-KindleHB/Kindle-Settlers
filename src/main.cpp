@@ -20,6 +20,9 @@
 
 static const double PI = 3.14159265358979323846;
 
+static int g_screen_w = 758;
+static int g_screen_h = 1024;
+
 static std::string trim(const std::string& s) {
     const auto b = s.find_first_not_of(" \t\r\n");
     if (b == std::string::npos) return "";
@@ -798,8 +801,11 @@ struct App {
     void draw_text(GtkWidget* widget, GdkGC* gc, int x, int y, int w, const std::string& text, int size, bool bold = false, bool center = false) {
         PangoLayout* layout_text = gtk_widget_create_pango_layout(widget, text.c_str());
         PangoFontDescription* font = pango_font_description_new();
+        size = std::max(10, std::min(72, size));
         pango_font_description_set_family(font, "Sans");
-        pango_font_description_set_size(font, size * PANGO_SCALE);
+        /* Kindle X reports a high DPI. Use absolute pixel sizing so text does not
+           balloon into oversized point-sized fonts on E Ink devices. */
+        pango_font_description_set_absolute_size(font, size * PANGO_SCALE);
         pango_font_description_set_weight(font, bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL);
         pango_layout_set_font_description(layout_text, font);
         pango_layout_set_width(layout_text, w * PANGO_SCALE);
@@ -1129,9 +1135,14 @@ struct App {
 
     gboolean expose(GtkWidget* widget) {
         GtkAllocation a = widget->allocation;
+        if (a.width <= 1 || a.height <= 1) {
+            a.width = g_screen_w;
+            a.height = g_screen_h;
+        }
         compute_layout(a.width, a.height);
         buttons.clear();
         GdkGC* gc = gdk_gc_new(widget->window);
+        if (widget->window) gdk_window_clear(widget->window);
         color(gc, 255); gdk_draw_rectangle(widget->window, gc, TRUE, 0, 0, a.width, a.height);
         color(gc, 0);
         if (screen == Screen::Menu) draw_menu(widget, gc);
@@ -1341,16 +1352,21 @@ static gboolean on_delete(GtkWidget*, GdkEvent*, gpointer) {
 static gboolean force_window_visible(gpointer data) {
     App* app = static_cast<App*>(data);
     if (!app || !app->window) return FALSE;
+
     gtk_window_set_decorated(GTK_WINDOW(app->window), FALSE);
     gtk_window_set_keep_above(GTK_WINDOW(app->window), TRUE);
-    gtk_window_fullscreen(GTK_WINDOW(app->window));
+    gtk_window_move(GTK_WINDOW(app->window), 0, 0);
+    gtk_window_resize(GTK_WINDOW(app->window), g_screen_w, g_screen_h);
+    gtk_widget_set_size_request(app->window, g_screen_w, g_screen_h);
+    if (app->area) gtk_widget_set_size_request(app->area, g_screen_w, g_screen_h);
+
     gtk_window_present(GTK_WINDOW(app->window));
     if (app->window->window) {
-        gdk_window_fullscreen(app->window->window);
+        gdk_window_move_resize(app->window->window, 0, 0, g_screen_w, g_screen_h);
         gdk_window_raise(app->window->window);
     }
     if (app->area) gtk_widget_queue_draw(app->area);
-    append_app_log("window-present requested");
+    append_app_log("popup-window-present requested");
     return FALSE;
 }
 
@@ -1364,23 +1380,48 @@ int main(int argc, char** argv) {
         append_app_log("gtk_init_check failed: unable to open Kindle X display");
         return 2;
     }
+
+    GdkScreen* screen_obj = gdk_screen_get_default();
+    if (screen_obj) {
+        int sw = gdk_screen_get_width(screen_obj);
+        int sh = gdk_screen_get_height(screen_obj);
+        if (sw >= 600 && sh >= 800) {
+            g_screen_w = sw;
+            g_screen_h = sh;
+        }
+    }
+    append_app_log("detected screen=" + std::to_string(g_screen_w) + "x" + std::to_string(g_screen_h));
+
     App app;
     g_app = &app;
     app.load_settings();
     app.gs.board.build_topology();
 
-    app.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(app.window), "Kindle Settlers");
-    gtk_window_set_default_size(GTK_WINDOW(app.window), 758, 1024);
+    /* Use a popup/override-redirect style window like the working TileWords path.
+       A normal managed top-level can appear as a floating overlay on Kindle Home. */
+    app.window = gtk_window_new(GTK_WINDOW_POPUP);
+    gtk_window_set_title(GTK_WINDOW(app.window), "L:A_N:application_ID:org.garske.kindlesettlers_PC:T");
+    gtk_window_set_default_size(GTK_WINDOW(app.window), g_screen_w, g_screen_h);
     gtk_window_set_decorated(GTK_WINDOW(app.window), FALSE);
     gtk_window_set_keep_above(GTK_WINDOW(app.window), TRUE);
-    gtk_window_set_position(GTK_WINDOW(app.window), GTK_WIN_POS_CENTER);
-    gtk_window_fullscreen(GTK_WINDOW(app.window));
+    gtk_window_set_resizable(GTK_WINDOW(app.window), FALSE);
+    gtk_window_move(GTK_WINDOW(app.window), 0, 0);
+    gtk_window_resize(GTK_WINDOW(app.window), g_screen_w, g_screen_h);
+    gtk_widget_set_size_request(app.window, g_screen_w, g_screen_h);
+    gtk_widget_set_app_paintable(app.window, TRUE);
+    gtk_widget_set_double_buffered(app.window, FALSE);
+
+    GdkColor white;
+    white.red = white.green = white.blue = 65535;
+    gtk_widget_modify_bg(app.window, GTK_STATE_NORMAL, &white);
 
     app.area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(app.area, 758, 1024);
+    gtk_widget_set_size_request(app.area, g_screen_w, g_screen_h);
+    gtk_widget_set_app_paintable(app.area, TRUE);
+    gtk_widget_set_double_buffered(app.area, FALSE);
+    gtk_widget_modify_bg(app.area, GTK_STATE_NORMAL, &white);
     gtk_container_add(GTK_CONTAINER(app.window), app.area);
-    gtk_widget_add_events(app.area, GDK_BUTTON_PRESS_MASK);
+    gtk_widget_add_events(app.area, GDK_BUTTON_PRESS_MASK | GDK_EXPOSURE_MASK);
     g_signal_connect(G_OBJECT(app.area), "expose-event", G_CALLBACK(on_expose), nullptr);
     g_signal_connect(G_OBJECT(app.area), "button-press-event", G_CALLBACK(on_button), nullptr);
     g_signal_connect(G_OBJECT(app.window), "delete-event", G_CALLBACK(on_delete), nullptr);
@@ -1389,6 +1430,8 @@ int main(int argc, char** argv) {
     gtk_widget_show_all(app.window);
     gtk_widget_grab_focus(app.area);
     force_window_visible(&app);
+    while (gtk_events_pending()) gtk_main_iteration_do(FALSE);
+    gtk_widget_queue_draw(app.area);
     g_idle_add(force_window_visible, &app);
     g_timeout_add(250, force_window_visible, &app);
     g_timeout_add(1500, force_window_visible, &app);
